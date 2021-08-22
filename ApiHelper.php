@@ -1,4 +1,5 @@
 <?php
+
 /**
  * This file contains only the ApiHelper class.
  */
@@ -13,7 +14,8 @@ use Symfony\Component\Yaml\Yaml;
  * An ApiHelper assists with fetching data from the API and database.
  * Post-processing of this data is minimal.
  */
-class ApiHelper {
+class ApiHelper
+{
 
 	/** @var MediawikiApi The MediawikiApi interface. */
 	protected $api;
@@ -50,18 +52,20 @@ class ApiHelper {
 	 *
 	 * @param string $wiki Wiki in the format lang.project, such as en.wikipedia
 	 */
-	public function __construct( $wiki = 'en.wikipedia' ) {
-		$this->creds = parse_ini_file( 'config.ini' );
+	public function __construct($wiki = 'en.wikipedia')
+	{
+		$this->creds = parse_ini_file('config.ini');
 		$this->wiki = $wiki;
 		$this->apiurl = "https://$wiki.org/w/api.php";
-		$this->api = MediawikiApi::newFromApiEndpoint( $this->apiurl );
+		$this->api = MediawikiApi::newFromApiEndpoint($this->apiurl);
 		$this->login();
-		$this->wikiConfig = Yaml::parseFile( __DIR__ . '/wikis.yml' )[$wiki];
-		$this->pageviewsRepo = new PageviewsRepository( $this->wiki );
+		$this->wikiConfig = Yaml::parseFile(__DIR__ . '/wikis.yml')[$wiki];
+		$this->pageviewsRepo = new PageviewsRepository($this->wiki);
 	}
 
-	private function connectDb() : void {
-		if ( isset( $this->db ) ) {
+	private function connectDb(): void
+	{
+		if (isset($this->db)) {
 			$this->db->close();
 		}
 
@@ -69,7 +73,7 @@ class ApiHelper {
 			$this->creds['dbhost'],
 			$this->creds['dbuser'],
 			$this->creds['dbpass'],
-			'enwiki_p',
+			'arwiki_p',
 			$this->creds['dbport']
 		);
 	}
@@ -77,9 +81,10 @@ class ApiHelper {
 	/**
 	 * Log in
 	 */
-	public function login() {
-		$this->user = new ApiUser( $this->creds['botuser'], $this->creds['botpass'], $this->apiurl );
-		$this->api->login( $this->user );
+	public function login()
+	{
+		$this->user = new ApiUser($this->creds['botuser'], $this->creds['botpass'], $this->apiurl);
+		$this->api->login($this->user);
 	}
 
 	/**
@@ -87,7 +92,8 @@ class ApiHelper {
 	 * 'config' (location of WikiProjects config) and 'category' (category the reports are put in).
 	 * @return string[]
 	 */
-	public function getWikiConfig() {
+	public function getWikiConfig()
+	{
 		return $this->wikiConfig;
 	}
 
@@ -97,11 +103,12 @@ class ApiHelper {
 	 * @param string $title Title to check existence for
 	 * @return bool True if title exists else false
 	 */
-	public function doesTitleExist( $title ) {
-		$params = [ 'titles' => $title ];
-		$result = $this->apiQuery( $params );
-		foreach ( $result['query']['pages'] as $r ) {
-			if ( isset( $r['missing'] ) || isset( $r['invalid'] ) ) {
+	public function doesTitleExist($title)
+	{
+		$params = ['titles' => $title];
+		$result = $this->apiQuery($params);
+		foreach ($result['query']['pages'] as $r) {
+			if (isset($r['missing']) || isset($r['invalid'])) {
 				return false;
 			}
 		}
@@ -114,13 +121,14 @@ class ApiHelper {
 	 * @param string $title The page title we're looking for first section in
 	 * @return bool True if exists, else false
 	 */
-	public function hasLeadSection( $title ) {
-		if ( !$this->doesTitleExist( $title ) ) {
+	public function hasLeadSection($title)
+	{
+		if (!$this->doesTitleExist($title)) {
 			return false;
 		}
-		$params = [ 'page' => $title,  'prop' => 'sections' ];
-		$result = $this->apiQuery( $params, 'parse' );
-		if ( !isset( $result['parse']['sections'][0] ) ) {
+		$params = ['page' => $title,  'prop' => 'sections'];
+		$result = $this->apiQuery($params, 'parse');
+		if (!isset($result['parse']['sections'][0])) {
 			// We return false if we didn't find any section
 			return false;
 		}
@@ -133,11 +141,14 @@ class ApiHelper {
 	 * @param string $project Name of the project, i.e. 'Medicine'
 	 * @return mysqli_result
 	 */
-	public function getProjectPages( $project ) : mysqli_result {
-		wfLogToFile( 'Fetching pages and assessments for project ' . $project );
+	public function getProjectPages($project): mysqli_result
+	{
+		wfLogToFile('Fetching pages and assessments for project ' . $project);
 
 		$this->connectDb();
-		$stmt = $this->db->prepare( "
+
+
+		$stmt = $this->db->prepare("
 			SELECT page_title, pa_class, pa_importance, (
 				SELECT rp.page_title
 				FROM page rp
@@ -152,8 +163,8 @@ class ApiHelper {
 				FROM page_assessments_projects
 				WHERE pap_project_title = ?
 			)
-			AND page_namespace = 0" );
-		$stmt->bind_param( 's', $project );
+			AND page_namespace = 0");
+		$stmt->bind_param('s', $project);
 		$stmt->execute();
 
 		return $stmt->get_result();
@@ -176,7 +187,7 @@ class ApiHelper {
 		string $end,
 		int $limit
 	) {
-		wfLogToFile( 'Fetching monthly pageviews' );
+		wfLogToFile('Fetching monthly pageviews');
 
 		$out = [];
 
@@ -190,24 +201,24 @@ class ApiHelper {
 		$totalPageviews = 0;
 		$index = 0;
 
-		while ( $row = $result->fetch_assoc() ) {
-		    $index++;
-		    $target = str_replace( '_', ' ', $row['page_title'] );
-		    $redir = str_replace( '_', ' ', $row['redir_title'] );
+		while ($row = $result->fetch_assoc()) {
+			$index++;
+			$target = str_replace('_', ' ', $row['page_title']);
+			$redir = str_replace('_', ' ', $row['redir_title']);
 
 			// Initialize with 0 views
-		    if ( !isset( $out[$target] ) ) {
-		        $out[$target] = [
-		            'pageviews' => 0,
+			if (!isset($out[$target])) {
+				$out[$target] = [
+					'pageviews' => 0,
 					'class' => '' === $row['pa_class'] ? 'Unknown' : $row['pa_class'],
 					'importance' => '' === $row['pa_importance'] ? 'Unknown' : $row['pa_importance'],
 				];
-		    }
+			}
 
-		    // Queue up pages to be batched-processed.
-			if ( !isset( $batch[$target] ) ) {
+			// Queue up pages to be batched-processed.
+			if (!isset($batch[$target])) {
 				// Make sure $target is in the list, too.
-				$batch[$target] = [ $target, $redir ];
+				$batch[$target] = [$target, $redir];
 			} else {
 				// Append to existing batch.
 				$batch[$target][] = $redir;
@@ -219,34 +230,35 @@ class ApiHelper {
 			// limit imposed by the API, but the retry handler will automatically slow down the
 			// script to ensure every page is processed. The 60 is just a guess at ensuring we
 			// have as close to 100 pages per run as possible.
-			if ( ++$batchCount > 60 ) {
-				wfLogToFile( "Processing page $index of $numResults" );
+			if (++$batchCount > 60) {
+				wfLogToFile("Processing page $index of $numResults");
 
-				$this->processBatch( $batch, $out, $start, $end, $totalPageviews );
+				$this->processBatch($batch, $out, $start, $end, $totalPageviews);
 				$batchCount = 0;
 			}
 		}
 
 		// Finish processing any leftover pages.
-		$this->processBatch( $batch, $out, $start, $end, $totalPageviews );
+		$this->processBatch($batch, $out, $start, $end, $totalPageviews);
 
 		$result->close();
-		wfLogToFile( 'Pageviews fetch complete' );
+		wfLogToFile('Pageviews fetch complete');
 
-		return [ $this->sortAndTruncatePagesList( $out, $limit ), $totalPageviews ];
+		return [$this->sortAndTruncatePagesList($out, $limit), $totalPageviews];
 	}
 
-	private function sortAndTruncatePagesList( array $out, int $limit ) : array {
+	private function sortAndTruncatePagesList(array $out, int $limit): array
+	{
 		// Sort by pageviews descending.
-		uasort( $out, function ( $a, $b ) {
-			if ( $a['pageviews'] === $b['pageviews'] ) {
+		uasort($out, function ($a, $b) {
+			if ($a['pageviews'] === $b['pageviews']) {
 				return 0;
 			}
 			return $a['pageviews'] > $b['pageviews'] ? -1 : 1;
-		} );
+		});
 
 		// Truncate to configured limit.
-		return array_slice( $out, 0, $limit, true );
+		return array_slice($out, 0, $limit, true);
 	}
 
 	/**
@@ -263,9 +275,9 @@ class ApiHelper {
 		string $start,
 		string $end,
 		int &$totalPageviews
-	) : void {
-		$batchResult = $this->pageviewsRepo->getPageviews( $batch, $start, $end );
-		foreach ( $batchResult as $title => $count ) {
+	): void {
+		$batchResult = $this->pageviewsRepo->getPageviews($batch, $start, $end);
+		foreach ($batchResult as $title => $count) {
 			$out[$title]['pageviews'] += $count;
 			$totalPageviews += $count;
 
@@ -283,13 +295,14 @@ class ApiHelper {
 	 * @param bool|int $section section to update on the page
 	 * @return array|\GuzzleHttp\Promise\PromiseInterface
 	 */
-	public function setText( $page, $text, $section = false ) {
-		if ( !$this->api->isLoggedin() ) {
+	public function setText($page, $text, $section = false)
+	{
+		if (!$this->api->isLoggedin()) {
 			$this->login();
 		}
-		$session = new MediawikiSession( $this->api );
-		$token = $session->getToken( 'edit' );
-		wfLogToFile( "Attempting to update \"$page\"" );
+		$session = new MediawikiSession($this->api);
+		$token = $session->getToken('edit');
+		wfLogToFile("Attempting to update \"$page\"");
 		$params = [
 			'title' => $page,
 			'text' => $text,
@@ -297,24 +310,24 @@ class ApiHelper {
 			'token' => $token,
 			'bot' => true
 		];
-		if ( $section ) {
+		if ($section) {
 			$params['section'] = $section;
 		}
 
 		$result = null;
 		try {
-			$result = $this->apiQuery( $params, 'edit', 'post' );
-		} catch ( Exception $e ) {
+			$result = $this->apiQuery($params, 'edit', 'post');
+		} catch (Exception $e) {
 			// Silently fail, otherwise this could break this halts execution
 			// and the bot fails to update all subsequent reports.
 			// The below messaging is enough for debugging purposes, as we can
 			// run generateReport.php on the one that failed to see what went wrong.
 		}
 
-		if ( $result ) {
-			wfLogToFile( "\"$page\" updated" );
+		if ($result) {
+			wfLogToFile("\"$page\" updated");
 		} else {
-			wfLogToFile( "\"$page\" could not be updated" );
+			wfLogToFile("\"$page\" could not be updated");
 		}
 		return $result;
 	}
@@ -324,16 +337,17 @@ class ApiHelper {
 	 *
 	 * @return array Config data.
 	 */
-	public function getJSONConfig() {
+	public function getJSONConfig()
+	{
 		$params = [
 			'page' => $this->wikiConfig['config'],
 			'prop' => 'wikitext'
 		];
-		$res = $this->apiQuery( $params, 'parse' );
-		$config = json_decode( $res['parse']['wikitext'], true );
+		$res = $this->apiQuery($params, 'parse');
+		$config = json_decode($res['parse']['wikitext'], true);
 
 		// Remove the 'description' entry which is meant only as explanatory text.
-		unset( $config['description'] );
+		unset($config['description']);
 
 		return $config;
 	}
@@ -343,9 +357,10 @@ class ApiHelper {
 	 *
 	 * @return array Config for WikiProjects which were not updated in the current month.
 	 */
-	public function getStaleProjects() {
+	public function getStaleProjects()
+	{
 		$config = $this->getJSONConfig();
-		foreach ( $config as $project => $info ) {
+		foreach ($config as $project => $info) {
 			$params = [
 				'prop' => 'revisions',
 				'titles' => $info['Report'],
@@ -353,13 +368,13 @@ class ApiHelper {
 				'rvuser' => $this->creds['botuser'],
 				'rvlimit' => 1
 			];
-			$res = $this->apiQuery( $params );
-			if ( isset( $res['query']['pages'][0]['revisions'][0]['timestamp'] ) ) {
+			$res = $this->apiQuery($params);
+			if (isset($res['query']['pages'][0]['revisions'][0]['timestamp'])) {
 				$timestamp = $res['query']['pages'][0]['revisions'][0]['timestamp'];
-				$rmonth = date( "F", strtotime( $timestamp ) );
-				$cmonth = date( "F" );
-				if ( $rmonth === $cmonth ) {
-					unset( $config[$project] ); // If report was generated in the same month, skip it
+				$rmonth = date("F", strtotime($timestamp));
+				$cmonth = date("F");
+				if ($rmonth === $cmonth) {
+					unset($config[$project]); // If report was generated in the same month, skip it
 				}
 			}
 		}
@@ -373,11 +388,12 @@ class ApiHelper {
 	 *     of the JSON config.
 	 * @return array|null Config for a single WikiProject or null if project not found.
 	 */
-	public function getProject( $projectName ) {
+	public function getProject($projectName)
+	{
 		$config = $this->getJSONConfig();
-		foreach ( $config as $project => $info ) {
-			if ( $info['Name'] === $projectName ) {
-				return [ $project => $info ];
+		foreach ($config as $project => $info) {
+			if ($info['Name'] === $projectName) {
+				return [$project => $info];
 			}
 		}
 		return null;
@@ -391,7 +407,8 @@ class ApiHelper {
 	 * @param  string $page
 	 * @return string Date in YYYY-MM-DD format.
 	 */
-	public function getBotLastEditDate( $page ) {
+	public function getBotLastEditDate($page)
+	{
 		$params = [
 			'prop' => 'revisions',
 			'titles' => $page,
@@ -399,10 +416,10 @@ class ApiHelper {
 			'rvuser' => $this->creds['botuser'],
 			'rvlimit' => 1
 		];
-		$res = $this->apiQuery( $params );
+		$res = $this->apiQuery($params);
 
-		if ( isset( $res['query']['pages'][0]['revisions'][0]['timestamp'] ) ) {
-			return date( 'Y-m-d', strtotime( $res['query']['pages'][0]['revisions'][0]['timestamp'] ) );
+		if (isset($res['query']['pages'][0]['revisions'][0]['timestamp'])) {
+			return date('Y-m-d', strtotime($res['query']['pages'][0]['revisions'][0]['timestamp']));
 		} else {
 			return '';
 		}
@@ -418,45 +435,46 @@ class ApiHelper {
 	 * @return GuzzleHttp\Promise\PromiseInterface|array Promise if $async is true,
 	 *   otherwise the API result in the form of an array
 	 */
-	public function apiQuery( $params, $action = 'query', $method = 'get', $async = false ) {
-		$factory = FluentRequest::factory()->setAction( $action )
-			->setParam( 'formatversion', 2 )
-			->setParam( 'format', 'json' );
-		foreach ( $params as $param => $value ) {
-			$factory->setParam( $param, $value );
+	public function apiQuery($params, $action = 'query', $method = 'get', $async = false)
+	{
+		$factory = FluentRequest::factory()->setAction($action)
+			->setParam('formatversion', 2)
+			->setParam('format', 'json');
+		foreach ($params as $param => $value) {
+			$factory->setParam($param, $value);
 		}
 		$res = null;
-		if ( $method == 'get' ) {
-			if ( $async ) {
+		if ($method == 'get') {
+			if ($async) {
 				try {
-					$res = $this->api->getRequestAsync( $factory );
-				} catch ( Exception $e ) {
+					$res = $this->api->getRequestAsync($factory);
+				} catch (Exception $e) {
 					// Uh oh, we got an exception, let's log it and retry.
-					wfLogToFile( 'Exception caught during API request: ' . $e->getMessage() );
-					$res = $this->api->getRequestAsync( $factory );
+					wfLogToFile('Exception caught during API request: ' . $e->getMessage());
+					$res = $this->api->getRequestAsync($factory);
 				}
 			} else {
 				try {
-					$res = $this->api->getRequest( $factory );
-				} catch ( Exception $e ) {
-					wfLogToFile( 'Exception caught during API request: ' . $e->getMessage() );
-					$res = $this->api->getRequest( $factory );
+					$res = $this->api->getRequest($factory);
+				} catch (Exception $e) {
+					wfLogToFile('Exception caught during API request: ' . $e->getMessage());
+					$res = $this->api->getRequest($factory);
 				}
 			}
 		} else {
-			if ( $async ) {
+			if ($async) {
 				try {
-					$res = $this->api->postRequestAsync( $factory );
-				} catch ( Exception $e ) {
-					wfLogToFile( 'Exception caught during API request: ' . $e->getMessage() );
-					$res = $this->api->postRequestAsync( $factory );
+					$res = $this->api->postRequestAsync($factory);
+				} catch (Exception $e) {
+					wfLogToFile('Exception caught during API request: ' . $e->getMessage());
+					$res = $this->api->postRequestAsync($factory);
 				}
 			} else {
 				try {
-					$res = $this->api->postRequest( $factory );
-				} catch ( Exception $e ) {
-					wfLogToFile( 'Exception caught during API request: ' . $e->getMessage() );
-					$res = $this->api->postRequest( $factory );
+					$res = $this->api->postRequest($factory);
+				} catch (Exception $e) {
+					wfLogToFile('Exception caught during API request: ' . $e->getMessage());
+					$res = $this->api->postRequest($factory);
 				}
 			}
 		}
@@ -469,8 +487,9 @@ class ApiHelper {
 	 *
 	 * @return string[][]
 	 */
-	public function getAssessmentConfig() {
-		if ( $this->assessmentConfig !== null ) {
+	public function getAssessmentConfig()
+	{
+		if ($this->assessmentConfig !== null) {
 			return $this->assessmentConfig;
 		}
 
@@ -480,7 +499,7 @@ class ApiHelper {
 			'https://xtools.wmflabs.org/api/project/assessments'
 		)->getBody()->getContents();
 
-		$this->assessmentConfig = json_decode( $ret, true )['config'][$this->wiki.'.org'];
+		$this->assessmentConfig = json_decode($ret, true)['config'][$this->wiki . '.org'];
 
 		return $this->assessmentConfig;
 	}

@@ -11,3 +11,5 @@ log.txt
 /docs
 coverage.xml
 phpDocumentor.phar
+/config.ini
+config.ini
